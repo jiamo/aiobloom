@@ -46,8 +46,8 @@ def make_hashfuncs(num_slices, num_bits):
     if extra:
         num_salts += 1
     salts = tuple(hashfn(hashfn(pack('I', i)).digest()) for i in range_fn(num_salts))
-    def _make_hashfuncs(key):
 
+    def _make_hashfuncs(key):
         if isinstance(key, str):
             key = key.encode('utf-8')
         else:
@@ -66,8 +66,10 @@ def make_hashfuncs(num_slices, num_bits):
     return _make_hashfuncs
 
 
-class BloomFilter(object):
+REDIS_MAX = 1 << 32
 
+
+class BloomFilter(object):
 
     def __init__(self, capacity, error_rate=0.001, bloom_key='bloom_key',
             redis_pool=None):
@@ -97,6 +99,9 @@ class BloomFilter(object):
         self.bits_per_slice = bits_per_slice
         self.capacity = capacity
         self.num_bits = num_slices * bits_per_slice
+        if self.num_bits >= REDIS_MAX:
+            raise Exception(f"Can't use number of bits bigger than 2^32,"
+                f"you may need add error_rate or reduce capacity")
         self.count = count
         self.make_hashes = make_hashfuncs(self.num_slices, self.bits_per_slice)
 
@@ -122,6 +127,8 @@ class BloomFilter(object):
         offset = 0
         with await self.pool as redis:
             bloom_filter = await redis.get(self.bloom_key)
+            if not bloom_filter:
+                return False   # mean we don't add any key , just think no exists
             include = True
             for hash_position in hashes:
                 index = offset + hash_position
