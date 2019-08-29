@@ -23,20 +23,23 @@ async def redis_pool():
     print("after use pool")
 
 
-
+@pytest.mark.skip()
 @pytest.mark.asyncio()
 async def test_bloom_in_should_in(redis_pool):
     with await redis_pool as redis:
         key = "test_bloom"
-        await redis.delete(key)
 
-        bloom_one = BloomFilter(100000, 0.1, bloom_key=key, redis_pool=redis_pool)
-        chars = [str(i) for i in range_fn(10000)]
-        real_in = chars[:1000]
-        real_not_in = chars[1000:]
+        await redis.delete(key)
+        total = 50000
+        put_num = 5000
+        error_rate = 0.01
+        bloom_one = BloomFilter(total, 0.1, bloom_key=key, redis_pool=redis_pool)
+        chars = [str(i) for i in range_fn(total)]
+        real_in = chars[:put_num]
+        real_not_in = chars[put_num:]
         bloom_in = []
         bloom_not_in = []
-        for char in chars[:1000]:
+        for char in chars[:put_num]:
             await bloom_one.add(char)
         for char in chars:
             isin = await bloom_one.exist(char)
@@ -44,23 +47,23 @@ async def test_bloom_in_should_in(redis_pool):
                 bloom_in.append(char)
             else:
                 bloom_not_in.append((char))
+        diff = set(real_in) - set(bloom_in)
+        print("diff ", diff)
+        assert diff == set()
 
-        print("real_in", real_in)
-        print("bloom_in", bloom_in)
-        assert set(bloom_in) - set(real_in)  == set ()
 
-
-@pytest.mark.asyncio
+# @pytest.mark.skip()
+@pytest.mark.asyncio()
 async def test_bloom_in_may_not_in(redis_pool):
     with await redis_pool as redis:
         key = "test_bloom_1"
         await redis.delete(key)
-        total = 10000
+        total = 50000
         error_rate = 0.01
         bloom_one = BloomFilter(total, error_rate, bloom_key=key, redis_pool=redis_pool)
         chars = [str(i) for i in range_fn(total)]
 
-        put_num = 1000
+        put_num = 45000
         bloom_in = []
         bloom_not_in = []
         for char in chars[:put_num]:
@@ -78,8 +81,28 @@ async def test_bloom_in_may_not_in(redis_pool):
         print("bloom in len ", len(bloom_in))
         print("bloom_not_in", len(bloom_not_in))
         rate = len(bloom_in) / total
-        print("false rate", )
+        print("false rate", rate)
         assert rate < error_rate
+
+
+@pytest.mark.skip()
+@pytest.mark.asyncio()
+async def test_hash(redis_pool):
+    with await redis_pool as redis:
+        key = "test_bloom_1"
+        await redis.delete(key)
+        total = 50000
+        error_rate = 0.01
+        bloom_one = BloomFilter(total, error_rate, bloom_key=key, redis_pool=redis_pool)
+        print(bloom_one.num_bits)
+        maxx = 0
+        for i in range(10000000):
+            hashs = bloom_one.make_hashes(str(i))
+            hashs = list(hashs)
+            # print(hashs)
+            if max(hashs) > maxx:
+                maxx = max(hashs)
+        print("max", maxx)
 
 
 if __name__ == '__main__':

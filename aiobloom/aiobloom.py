@@ -118,19 +118,22 @@ class BloomFilter(object):
     async def exist(self, key):
 
         hashes = self.make_hashes(key)
+        hashes = list(hashes)
+        offset = 0
         with await self.pool as redis:
             bloom_filter = await redis.get(self.bloom_key)
             include = True
             for hash_position in hashes:
-                # print(bloom_filter, len(bloom_filter) , hash_position // 8)
-                hash_byte_index = hash_position // 8
+                index = offset + hash_position
+                hash_byte_index = index // 8
                 if hash_byte_index >= len(bloom_filter):
                     # the hash key is big then total it should not exist:
                     return False
-                bit_is_set = bloom_filter[hash_byte_index] >> (7 - hash_position % 8) & 1
+                bit_is_set = bloom_filter[hash_byte_index] >> (7 - index % 8) & 1
                 if not bit_is_set:
                     include = False
                     break
+                offset += self.bits_per_slice
         return include
 
     async def add(self, key, skip_check=False):
@@ -138,10 +141,13 @@ class BloomFilter(object):
         if self.count > self.capacity:
             raise IndexError("BloomFilter is at capacity")
 
+        offset = 0
         with await self.pool as redis:
             pipe = redis.pipeline()
             for hash_position in hashes:
-                pipe.setbit(self.bloom_key, hash_position, 1)
+                index = offset + hash_position
+                pipe.setbit(self.bloom_key, index, 1)
+                offset += self.bits_per_slice
             await pipe.execute()
 
     def __getstate__(self):
